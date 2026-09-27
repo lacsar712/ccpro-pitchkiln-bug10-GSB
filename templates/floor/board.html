@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}灶台值守看板{% endblock %}
+{% block content %}
+<section class="board-head">
+  <div>
+    <h1>灶台值守看板</h1>
+    <p class="board-sub">按过道排布 · 点灶牌开右侧抽屉</p>
+  </div>
+  <div class="phase-legend">
+    {% for key, label, count in phase_legend %}
+    <span class="leg phase-{{ key }}"><i></i>{{ label }} {{ count }}</span>
+    {% endfor %}
+  </div>
+</section>
+
+<form method="get" class="board-filters" style="margin-bottom:1rem">
+  <label>过道筛选 <input class="field" name="lane" value="{{ filter_lane }}"></label>
+  <button type="submit" class="btn-ember">按过道</button>
+</form>
+
+{% include "floor/_grid.html" %}
+
+<aside id="hearth-drawer" class="drawer {% if drawer_open %}open{% endif %}">
+  {% if drawer_open %}
+    {% include "floor/_drawer.html" %}
+  {% else %}
+    <div class="drawer-empty">点选灶牌查看值守与探针</div>
+  {% endif %}
+</aside>
+{% endblock %}
