@@ -1,3 +1,5 @@
+from collections import Counter
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
@@ -26,44 +28,38 @@ def _hearths_for_board():
             .prefetch_related("probes"),
             to_attr="open_runs_cache",
         )
-    ).order_by("lane", "tag")
+    ).order_by("lane", "tag", "id")
 
 
-def _resolve_by_tag(tag: str):
-    return FireHearth.objects.filter(tag=tag).order_by("id").first()
+def _parse_lane(lane_filter):
+    if lane_filter in (None, ""):
+        return None
+    try:
+        return int(lane_filter)
+    except (TypeError, ValueError):
+        return None
 
 
 def _board_context(lane_filter=None):
+    # 过道归属一律以灶台主键自身的 lane 为准，严禁按灶牌字符串做全局查找：
+    # 历史脏数据存在跨过道同牌，按 tag 归并会把甲过道灶显示成乙过道灶。
     hearths = list(_hearths_for_board())
-    if lane_filter not in (None, ""):
-        try:
-            lane_num = int(lane_filter)
-        except (TypeError, ValueError):
-            lane_num = None
-        if lane_num is not None:
-            tags_on_lane = {h.tag for h in hearths if h.lane == lane_num}
-            hearths = [h for h in hearths if h.tag in tags_on_lane]
-
-    by_tag = {}
-    for h in hearths:
-        by_tag[h.tag] = _resolve_by_tag(h.tag) or h
+    lane_num = _parse_lane(lane_filter)
+    if lane_num is not None:
+        hearths = [h for h in hearths if h.lane == lane_num]
 
     lanes = {}
-    for tag, h in by_tag.items():
-        display = _resolve_by_tag(tag) or h
-        lanes.setdefault(display.lane, []).append(display)
+    for h in hearths:
+        lanes.setdefault(h.lane, []).append(h)
 
-    legend_by_tag = {}
-    for h in FireHearth.objects.all():
-        canon = _resolve_by_tag(h.tag) or h
-        legend_by_tag[h.tag] = canon.phase
-
+    # 图例对当前看板上的灶台（逐主键）计数，与瓦片、过滤严格对齐。
+    phase_counts = Counter(h.phase for h in hearths)
     phase_legend = [
-        (key, label, sum(1 for ph in legend_by_tag.values() if ph == key))
+        (key, label, phase_counts.get(key, 0))
         for key, label in FireHearth.PHASE_CHOICES
     ]
     return {
-        "hearths": list(by_tag.values()),
+        "hearths": hearths,
         "lanes": sorted(lanes.items()),
         "phase_legend": phase_legend,
         "filter_lane": lane_filter or "",
@@ -71,18 +67,18 @@ def _board_context(lane_filter=None):
 
 
 def _drawer_context(hearth):
-    canon = _resolve_by_tag(hearth.tag) or hearth
-    open_run = canon.open_run()
+    # 抽屉展示的就是 URL 主键指定的这台灶本身，不做任何灶牌归并。
+    open_run = hearth.open_run()
     probes = []
     if open_run:
         probes = list(open_run.probes.order_by("-sampledAt", "-id"))
     return {
-        "hearth": canon,
+        "hearth": hearth,
         "open_run": open_run,
         "probes": probes,
-        "phase_form": PhaseChangeForm(hearth=canon),
+        "phase_form": PhaseChangeForm(hearth=hearth),
         "probe_form": SoftPointProbeForm() if open_run else None,
-        "open_run_form": OpenCookRunForm(hearth=canon) if open_run is None else None,
+        "open_run_form": OpenCookRunForm(hearth=hearth) if open_run is None else None,
         "requested_lane": hearth.lane,
     }
 
