@@ -29,61 +29,55 @@ def _hearths_for_board():
     ).order_by("lane", "tag")
 
 
-def _resolve_by_tag(tag: str):
-    return FireHearth.objects.filter(tag=tag).order_by("id").first()
-
-
 def _board_context(lane_filter=None):
+    # 过道归属一律以灶台主键（FireHearth.pk）与其自身 lane 字段为准，
+    # 历史脏数据里存在跨过道同牌灶，绝不能按灶牌字符串做全局查找。
     hearths = list(_hearths_for_board())
+
+    lane_num = None
     if lane_filter not in (None, ""):
         try:
             lane_num = int(lane_filter)
         except (TypeError, ValueError):
             lane_num = None
-        if lane_num is not None:
-            tags_on_lane = {h.tag for h in hearths if h.lane == lane_num}
-            hearths = [h for h in hearths if h.tag in tags_on_lane]
 
-    by_tag = {}
-    for h in hearths:
-        by_tag[h.tag] = _resolve_by_tag(h.tag) or h
+    if lane_num is not None:
+        # 只按灶台自身的 lane 过滤，不用 tag 集合反查，避免卷入别过道同牌灶
+        hearths = [h for h in hearths if h.lane == lane_num]
 
     lanes = {}
-    for tag, h in by_tag.items():
-        display = _resolve_by_tag(tag) or h
-        lanes.setdefault(display.lane, []).append(display)
+    for h in hearths:
+        lanes.setdefault(h.lane, []).append(h)
 
-    legend_by_tag = {}
-    for h in FireHearth.objects.all():
-        canon = _resolve_by_tag(h.tag) or h
-        legend_by_tag[h.tag] = canon.phase
-
+    # 图例在过滤后的灶台集合上按主键逐口计数（同牌灶各算各的）
+    phase_counts = {key: 0 for key, _ in FireHearth.PHASE_CHOICES}
+    for h in hearths:
+        phase_counts[h.phase] = phase_counts.get(h.phase, 0) + 1
     phase_legend = [
-        (key, label, sum(1 for ph in legend_by_tag.values() if ph == key))
+        (key, label, phase_counts.get(key, 0))
         for key, label in FireHearth.PHASE_CHOICES
     ]
     return {
-        "hearths": list(by_tag.values()),
+        "hearths": hearths,
         "lanes": sorted(lanes.items()),
         "phase_legend": phase_legend,
-        "filter_lane": lane_filter or "",
+        "filter_lane": lane_num if lane_num is not None else "",
     }
 
 
 def _drawer_context(hearth):
-    canon = _resolve_by_tag(hearth.tag) or hearth
-    open_run = canon.open_run()
+    # 抽屉始终围绕 URL 主键命中的那口灶本身，不按灶牌替换
+    open_run = hearth.open_run()
     probes = []
     if open_run:
         probes = list(open_run.probes.order_by("-sampledAt", "-id"))
     return {
-        "hearth": canon,
+        "hearth": hearth,
         "open_run": open_run,
         "probes": probes,
-        "phase_form": PhaseChangeForm(hearth=canon),
+        "phase_form": PhaseChangeForm(hearth=hearth),
         "probe_form": SoftPointProbeForm() if open_run else None,
-        "open_run_form": OpenCookRunForm(hearth=canon) if open_run is None else None,
-        "requested_lane": hearth.lane,
+        "open_run_form": OpenCookRunForm(hearth=hearth) if open_run is None else None,
     }
 
 

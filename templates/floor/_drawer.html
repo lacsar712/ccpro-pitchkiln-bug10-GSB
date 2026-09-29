@@ -1,7 +1,7 @@
 <div class="drawer-panel">
   <header class="drawer-top">
     <div>
-      <p class="drawer-kicker">过道 {{ hearth.lane }}{% if requested_lane and requested_lane != hearth.lane %}（请求过道 {{ requested_lane }}）{% endif %}</p>
+      <p class="drawer-kicker">过道 {{ hearth.lane }}</p>
       <h2>{{ hearth.tag }}</h2>
     </div>
     <span class="badge phase-{{ hearth.phase }}">{{ hearth.get_phase_display }}</span>
